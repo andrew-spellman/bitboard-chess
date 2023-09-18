@@ -68,8 +68,7 @@ fn main() {
     board.update_pieces();
     board.black_king = 0;
     let input_pos = get_cli_move_input();
-    //board.white_pawn |= input_pos.0.to_bitboard();
-    board.white_pawn |= board.rook_moves_pseudo_legal(input_pos.0, BLACK);
+    board.white_pawn |= board.king_moves_pseudo_legal(&input_pos.0, BLACK);
     println!("{}", board);
 }
 
@@ -191,7 +190,7 @@ impl Board {
             | self.black_pawn;
     }
 
-    fn rook_moves_pseudo_legal(&self, pos: Pos, white: bool) -> u64 {
+    fn rook_moves_pseudo_legal(&self, pos: &Pos, white: bool) -> u64 {
         let (same_color, opp_color) = if white {
             (self.white_pieces, self.black_pieces)
         } else {
@@ -202,18 +201,18 @@ impl Board {
         let mut moves = 0_u64;
         
         // left
-        add_sliding_moves(pos.rank, -1, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        add_sliding_moves(pos.rank, -1, &mut moves, bitboard_pos, &same_color, &opp_color);
         // right
-        add_sliding_moves(7 - pos.rank, 1, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        add_sliding_moves(7 - pos.rank, 1, &mut moves, bitboard_pos, &same_color, &opp_color);
         // down
-        add_sliding_moves(pos.file, -8, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        add_sliding_moves(pos.file, -8, &mut moves, bitboard_pos, &same_color, &opp_color);
         // up
-        add_sliding_moves(7 - pos.file, 8, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        add_sliding_moves(7 - pos.file, 8, &mut moves, bitboard_pos, &same_color, &opp_color);
         
         moves
     }
 
-    fn bishop_moves_pseudo_legal(&self, pos: Pos, white: bool) -> u64 { 
+    fn bishop_moves_pseudo_legal(&self, pos: &Pos, white: bool) -> u64 { 
         let (same_color, opp_color) = if white {
             (self.white_pieces, self.black_pieces)
         } else {
@@ -226,14 +225,61 @@ impl Board {
         use core::cmp::min;
 
         // left + down
-        add_sliding_moves(min(pos.rank, pos.file), -9, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        add_sliding_moves(min(pos.rank, pos.file), -9, &mut moves, bitboard_pos, &same_color, &opp_color);
         // right + down
-        add_sliding_moves(min(7 - pos.rank, pos.file), -7, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        add_sliding_moves(min(7 - pos.rank, pos.file), -7, &mut moves, bitboard_pos, &same_color, &opp_color);
         // left + up
-        add_sliding_moves(min(pos.rank, 7 - pos.file), 7, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        add_sliding_moves(min(pos.rank, 7 - pos.file), 7, &mut moves, bitboard_pos, &same_color, &opp_color);
         // right + up
-        add_sliding_moves(min(7 - pos.rank, 7 - pos.file), 9, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        add_sliding_moves(min(7 - pos.rank, 7 - pos.file), 9, &mut moves, bitboard_pos, &same_color, &opp_color);
         
+        moves
+    }
+
+    fn queen_moves_pseudo_legal(&self, pos: &Pos, white: bool) -> u64 {
+       self.rook_moves_pseudo_legal(pos, white) | self.bishop_moves_pseudo_legal(pos, white)
+    }
+
+    fn king_moves_pseudo_legal(&self, pos: &Pos, white: bool) -> u64 {
+        let same_color = if white {
+            self.white_pieces
+        } else {
+            self.black_pieces
+        };
+
+        let left =  pos.rank > 0;
+        let right = pos.rank < 7;
+        let down = pos.file > 0;
+        let up = pos.file < 7;
+
+        let bitboard_pos = pos.to_bitboard();
+        let mut moves = 0_u64;
+
+        if left {
+            add_move_if_not_same_color(bitboard_pos >> 1, &mut moves, &same_color); 
+            if down {
+                add_move_if_not_same_color(bitboard_pos >> 9, &mut moves, &same_color); 
+            }
+            if up {
+                add_move_if_not_same_color(bitboard_pos << 7, &mut moves, &same_color); 
+            }
+        }
+        if right {
+            add_move_if_not_same_color(bitboard_pos << 1, &mut moves, &same_color); 
+            if down {
+                add_move_if_not_same_color(bitboard_pos >> 7, &mut moves, &same_color); 
+            }
+            if up {
+                add_move_if_not_same_color(bitboard_pos << 9, &mut moves, &same_color); 
+            }
+        }
+        if down {
+            add_move_if_not_same_color(bitboard_pos >> 8, &mut moves, &same_color); 
+        }
+        if up {
+            add_move_if_not_same_color(bitboard_pos << 8, &mut moves, &same_color); 
+        }
+
         moves
     }
 }
@@ -244,23 +290,27 @@ impl fmt::Display for Board {
     }
 }
 
-fn add_sliding_moves(distance: u8, bitshift: i8, moves: &mut u64, bitboard_pos: &u64, same_color: &u64, opp_color: &u64)  {
-    let mut one_hot: u64 = *bitboard_pos;
+fn add_sliding_moves(distance: u8, bitshift: i8, moves: &mut u64, mut bitboard_pos: u64, same_color: &u64, opp_color: &u64)  {
     for _ in 0..distance {
         if bitshift < 0 {
-            one_hot >>= bitshift.abs();
+            bitboard_pos >>= bitshift.abs();
         } else {
-            one_hot <<= bitshift;
+            bitboard_pos <<= bitshift;
         }
-        if same_color & one_hot != 0 {
+        if same_color & bitboard_pos != 0 {
             break;
         }
-        *moves |= one_hot;
-        if opp_color & one_hot != 0 {
+        *moves |= bitboard_pos;
+        if opp_color & bitboard_pos != 0 {
             break;
         }
     }
+}
 
+fn add_move_if_not_same_color(bitboard_pos: u64, moves: &mut u64, same_color: &u64) {
+   if bitboard_pos & same_color == 0 {
+        *moves |= bitboard_pos;
+   } 
 }
 
 struct Pos {
