@@ -61,7 +61,17 @@ const ODD_BACKWARD_DIAG: [u64; 7] = [
     0b_01000000_10000000_00000000_00000000_00000000_00000000_00000000_00000000_u64,
 ];
 
-fn main() {}
+fn main() {
+    let mut board = Board::new_empty();
+    board.black_king |= 0b_00100100_u64;
+    println!("{}", board);
+    board.update_pieces();
+    board.black_king = 0;
+    let input_pos = get_cli_move_input();
+    //board.white_pawn |= input_pos.0.to_bitboard();
+    board.white_pawn |= board.rook_moves_pseudo_legal(input_pos.0, BLACK);
+    println!("{}", board);
+}
 
 struct Board {
     white_king: u64,
@@ -76,6 +86,8 @@ struct Board {
     black_knight: u64,
     white_pawn: u64,
     black_pawn: u64,
+    white_pieces: u64,
+    black_pieces: u64,
 }
 
 impl Board {
@@ -104,6 +116,10 @@ impl Board {
             white_pawn:
                 0b_00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000_u64,
             black_pawn:
+                0b_00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000_u64,
+            white_pieces:
+                0b_00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000_u64,
+            black_pieces:
                 0b_00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000_u64,
         }
     }
@@ -134,6 +150,10 @@ impl Board {
                 0b_00000000_00000000_00000000_00000000_00000000_00000000_11111111_00000000_u64,
             black_pawn:
                 0b_00000000_11111111_00000000_00000000_00000000_00000000_00000000_00000000_u64,
+            white_pieces:
+                0b_00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000_u64,
+            black_pieces:
+                0b_00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000_u64,
         }
     }
 
@@ -156,8 +176,64 @@ impl Board {
         }
     }
 
-    fn rook_moves_pseudo_legal(pos: u64, white: bool) -> u64 {
-        let moves = 0u64;
+    fn update_pieces(&mut self) {
+        self.white_pieces = self.white_king
+            | self.white_queen
+            | self.white_rook
+            | self.white_bishop
+            | self.white_knight
+            | self.white_pawn;
+        self.black_pieces = self.black_king
+            | self.black_queen
+            | self.black_rook
+            | self.black_bishop
+            | self.black_knight
+            | self.black_pawn;
+    }
+
+    fn rook_moves_pseudo_legal(&self, pos: Pos, white: bool) -> u64 {
+        let (same_color, opp_color) = if white {
+            (self.white_pieces, self.black_pieces)
+        } else {
+            (self.black_pieces, self.white_pieces)
+        };
+        
+        let bitboard_pos = pos.to_bitboard();
+        let mut moves = 0_u64;
+        
+        // left
+        add_sliding_moves(pos.rank, -1, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        // right
+        add_sliding_moves(7 - pos.rank, 1, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        // down
+        add_sliding_moves(pos.file, -8, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        // up
+        add_sliding_moves(7 - pos.file, 8, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        
+        moves
+    }
+
+    fn bishop_moves_pseudo_legal(&self, pos: Pos, white: bool) -> u64 { 
+        let (same_color, opp_color) = if white {
+            (self.white_pieces, self.black_pieces)
+        } else {
+            (self.black_pieces, self.white_pieces)
+        };
+        
+        let bitboard_pos = pos.to_bitboard();
+        let mut moves = 0_u64;
+
+        use core::cmp::min;
+
+        // left + down
+        add_sliding_moves(min(pos.rank, pos.file), -9, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        // right + down
+        add_sliding_moves(min(7 - pos.rank, pos.file), -7, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        // left + up
+        add_sliding_moves(min(pos.rank, 7 - pos.file), 7, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        // right + up
+        add_sliding_moves(min(7 - pos.rank, 7 - pos.file), 9, &mut moves, &bitboard_pos, &same_color, &opp_color);
+        
         moves
     }
 }
@@ -168,7 +244,73 @@ impl fmt::Display for Board {
     }
 }
 
-fn get_cli_move_input() -> (u64, u64) {
+fn add_sliding_moves(distance: u8, bitshift: i8, moves: &mut u64, bitboard_pos: &u64, same_color: &u64, opp_color: &u64)  {
+    let mut one_hot: u64 = *bitboard_pos;
+    for _ in 0..distance {
+        if bitshift < 0 {
+            one_hot >>= bitshift.abs();
+        } else {
+            one_hot <<= bitshift;
+        }
+        if same_color & one_hot != 0 {
+            break;
+        }
+        *moves |= one_hot;
+        if opp_color & one_hot != 0 {
+            break;
+        }
+    }
+
+}
+
+struct Pos {
+    rank: u8,
+    file: u8,
+}
+
+impl Pos {
+    fn new(rank: u8, file: u8) -> Self {
+        Self {
+            rank,
+            file,
+        }
+    }
+
+    fn from_ascii(rank_char: u8, file_char: u8) -> Option<Self> {
+        let rank = match rank_char {
+            97 => 0,
+            98 => 1,
+            99 => 2,
+            100 => 3,
+            101 => 4,
+            102 => 5,
+            103 => 6,
+            104 => 7,
+            _ => return None,
+        };
+        let file = match file_char {
+            49 => 0,
+            50 => 1,
+            51 => 2,
+            52 => 3,
+            53 => 4,
+            54 => 5,
+            55 => 6,
+            56 => 7,
+            _ => return None,
+        };
+        Some(Self {
+            rank,
+            file,
+        })
+    }
+
+    fn to_bitboard(&self) -> u64 {
+        1_u64 << (self.rank + (self.file * 8))
+    }
+}
+
+fn get_cli_move_input() -> (Pos, Pos) {
     let mut buffer = String::new();
     print!("Input move: ");
     let _ = io::stdout().flush();
@@ -179,7 +321,7 @@ fn get_cli_move_input() -> (u64, u64) {
         if buffer.len() == 5 && buffer.is_ascii() {
             let bytes = buffer.as_bytes();
             if let (Some(inital_pos), Some(final_pos)) =
-                (parse_pos(bytes[0], bytes[1]), parse_pos(bytes[2], bytes[3]))
+                (Pos::from_ascii(bytes[0], bytes[1]), Pos::from_ascii(bytes[2], bytes[3]))
             {
                 return (inital_pos, final_pos);
             }
@@ -187,31 +329,4 @@ fn get_cli_move_input() -> (u64, u64) {
         println!("Error parsing move, try again (example \"c2c4\").");
         buffer.clear();
     }
-}
-
-fn parse_pos(rank: u8, file: u8) -> Option<u64> {
-    let mut pos = 1u64;
-    pos <<= match rank {
-        97 => 0,
-        98 => 1,
-        99 => 2,
-        100 => 3,
-        101 => 4,
-        102 => 5,
-        103 => 6,
-        104 => 7,
-        _ => return None,
-    };
-    pos <<= match file {
-        49 => 0,
-        50 => 8,
-        51 => 16,
-        52 => 24,
-        53 => 32,
-        54 => 40,
-        55 => 48,
-        56 => 56,
-        _ => return None,
-    };
-    Some(pos)
 }
