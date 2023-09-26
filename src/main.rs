@@ -87,6 +87,12 @@ struct Board {
     black_pawn: u64,
     white_pieces: u64,
     black_pieces: u64,
+    // turn_color: bool,
+    // en_passant: Pos,
+    // black_short_castle: bool,
+    // black_long_castle: bool,
+    // white_short_castle: bool,
+    // white_long_castle: bool,
 }
 
 impl Board {
@@ -280,6 +286,32 @@ impl Board {
             add_move_if_not_same_color(bitboard_pos << 8, &mut moves, &same_color); 
         }
 
+        moves
+    }
+
+    fn knight_moves_pseudo_legal(&self, pos: &Pos, white: bool) -> u64 {
+        let same_color = if white {
+            self.white_pieces
+        } else {
+            self.black_pieces
+        };
+
+        let bitboard_pos = pos.to_bitboard();
+        let mut moves = 0_u64;
+        
+        moves
+    }
+
+    fn pawn_moves_pseudo_legal(&self, pos: &Pos, white: bool) -> u64 {
+        let same_color = if white {
+            self.white_pieces
+        } else {
+            self.black_pieces
+        };
+
+        let bitboard_pos = pos.to_bitboard();
+        let mut moves = 0_u64;
+        
         moves
     }
 }
